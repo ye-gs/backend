@@ -1,0 +1,10 @@
+{
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "diffEditor.ignoreTrimWhitespace": false,
+        "editor.formatOnType": true,
+        "editor.formatOnSave": true,
+        "editor.formatOnPaste": true,
+        "editor.wordBasedSuggestions": "off"
+    }
+}
