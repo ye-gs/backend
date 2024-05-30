@@ -12,6 +12,8 @@ pandas = "^2.2.2"
 pdfquery = "^0.4.3"
 uvicorn = "^0.29.0"
 lxml = "^5.2.1"
+pymupdf = "^1.24.4"
+xlsxwriter = "^3.2.0"
 
 
 [tool.poetry.group.dev.dependencies]
