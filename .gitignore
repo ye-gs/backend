@@ -128,6 +128,10 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# files
 *.pdf
 *.txt
-.xlsx
+*.xls
+*.xlsx
+script*.py
