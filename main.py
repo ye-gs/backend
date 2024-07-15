@@ -17,3 +17,9 @@ async def create_upload_file(file: UploadFile) -> Dict[str, Any]:
         "info": "Tabelas extraídas com sucesso!",
         "tabelas": df.to_dict(orient="records"),
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

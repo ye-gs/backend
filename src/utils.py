@@ -1,4 +1,5 @@
-from pandas import DataFrame, Series, concat, to_numeric
+import re
+from pandas import DataFrame, Series, concat, to_numeric, isna
 from pymupdf import open, Page
 from pymupdf.table import TableFinder
 
@@ -32,7 +33,9 @@ def trata_colunas_iniciais(df: DataFrame, num_col: int) -> DataFrame:
     return df
 
 
-def eliminate_junk_and_rename_cols(tab: TableFinder) -> DataFrame:
+def eliminate_junk_and_rename_cols(
+    tab: TableFinder, columns: list[str] | None = None
+) -> DataFrame:
     """
     This function eliminates unnecessary columns and renames specific
     columns in a DataFrame obtained from a table in a PDF document.
@@ -53,11 +56,20 @@ def eliminate_junk_and_rename_cols(tab: TableFinder) -> DataFrame:
     4. Returns the cleaned and prepared DataFrame.
     """
     df = tab.to_pandas()  # convert to pandas DataFrame
-    num_col = df.iloc[0].value_counts().iloc[0]  # verifica se ha colunas inúteis
-    if num_col != 1:
-        num_col += 1
-    df = trata_colunas_iniciais(df, num_col)
+    if not df.empty:
+        df = df.dropna(axis=1, how="all")  # remove colunas vazias
+        num_col = df.iloc[0].value_counts().iloc[0]  # verifica se ha colunas inúteis
+        if num_col != 1:
+            num_col += 1
+        df = trata_colunas_iniciais(df, num_col)
 
+    else:
+        data: list[str] = [c for c in df.columns]
+        stupid_index = r"\d-"
+        data = [re.sub(stupid_index, "", c) for c in data]
+        if columns is not None:
+            df = DataFrame([dict(zip(columns, data))])
+    df.columns = [c.replace("\n", " ") for c in df.columns]
     return df
 
 
@@ -76,14 +88,18 @@ def parse_number_cols(cell: Series) -> Series:
     """
     found = False
     for c in cell.index:
-        if "(1)" in cell[c]:
-            cell[c] = cell[c].replace("(1)", "")
-        if "(*)" in cell[c]:
-            cell[c] = cell[c].replace("(*)", "")
-            found = True
-        if "----" in cell[c]:
-            cell[c] = cell[c].replace("----", "")
-        cell[c] = to_numeric(cell[c].replace(".", "").replace(",", "."))
+        if not isna(cell[c]):
+            if "(1)" in cell[c]:
+                cell[c] = cell[c].replace("(1)", "")
+            if "(*)" in cell[c]:
+                cell[c] = cell[c].replace("(*)", "")
+                found = True
+            if "----" in cell[c]:
+                cell[c] = cell[c].replace("----", "")
+            try:
+                cell[c] = to_numeric(cell[c].replace(".", "").replace(",", "."))
+            except ValueError:
+                cell[c] = None
     cell["Referência varia com idade"] = found
     return cell
 
@@ -103,89 +119,101 @@ def mapeia_valores_referencia(cell: str | None) -> tuple[str | None, ...]:
     If the cell content does not contain reference values,
     the tuple will contain None for all values.
     """
-    superior, inferior, unidade = None, None, "Não encontrado pela IA..."
-    if not isinstance(cell, str):
-        return None, None, None
-    if cell == "----":
-        return None, None, None
-    if " a " in cell:
-        inferior, superior_e_unidade = cell.split(" a ")
-        inferior = inferior.strip()
-        if ":" in inferior.lower():
-            inferior = inferior.split(":")[1]
-        if " " in superior_e_unidade:
+    try:
+        superior, inferior, unidade = None, None, "Não encontrado pela IA..."
+        if not isinstance(cell, str):
+            return None, None, None
+        if cell == "----":
+            return None, None, None
+        cell = cell.replace("De", "")
+        if "inferior a " in cell:
+            inferior_e_unidade = cell.split("inferior a ")[1]
+            inferior, unidade = inferior_e_unidade.split(" ")
+        elif " a " in cell:
+            inferior, superior_e_unidade = cell.split(" a ")
+            inferior = inferior.strip()
+            if ":" in inferior.lower():
+                inferior = inferior.split(":")[1]
+            if " " in superior_e_unidade:
+                superior, unidade = superior_e_unidade.split(" ")
+                superior = superior.strip()
+            elif "/" in superior_e_unidade:
+                superior, unidade = superior_e_unidade.split("/")
+                unidade = "/" + unidade
+                superior = superior.strip()
+        elif "Ver resultado tradicional" in cell:
+            inferior, superior, unidade = None, None, "Ver resultado tradicional"
+        elif "jejum" in cell:
+            tupla_jejum = cell.split("\n")
+            if len(tupla_jejum) == 2:
+                com_jejum, sem_jejum = tupla_jejum
+                if "menor que " in sem_jejum.lower() or "< " in sem_jejum:
+                    if "< " in sem_jejum:
+                        inferior_e_unidade = sem_jejum.split("< ")[1]
+                        inferior, unidade = inferior_e_unidade.split(" ")
+                    else:
+                        inferior_e_unidade = sem_jejum.split("enor que ")[1]
+                        inferior, unidade = inferior_e_unidade.split(" ")
+                elif "menor que " in com_jejum.lower() or "< " in com_jejum:
+                    if "< " in sem_jejum:
+                        inferior_e_unidade = sem_jejum.split("< ")[1]
+                        inferior, unidade = inferior_e_unidade.split(" ")
+                    else:
+                        superior_e_unidade = com_jejum.split("enor que ")[1]
+                        superior, unidade = superior_e_unidade.split(" ")
+                elif "maior que " in sem_jejum.lower() or "> " in sem_jejum:
+                    if "> " in sem_jejum:
+                        inferior_e_unidade = sem_jejum.split("> ")[1]
+                        inferior, unidade = inferior_e_unidade.split(" ")
+                    else:
+                        inferior_e_unidade = sem_jejum.split("aior que ")[1]
+                        inferior, unidade = inferior_e_unidade.split(" ")
+                elif "maior que " in com_jejum.lower() or "> " in com_jejum:
+                    if "> " in sem_jejum:
+                        inferior_e_unidade = sem_jejum.split("> ")[1]
+                        inferior, unidade = inferior_e_unidade.split(" ")
+                    else:
+                        superior_e_unidade = com_jejum.split("aior que ")[1]
+                        superior, unidade = superior_e_unidade.split(" ")
+            else:
+                inferior, unidade, superior, _ = tupla_jejum
+                if (
+                    "menor que " in inferior.lower()
+                    and "menor que " in superior.lower()
+                ):
+                    inferior = inferior.split("enor que ")[1].strip()
+                    superior = superior.split("enor que ")[1].strip()
+                if (
+                    "maior que " in inferior.lower()
+                    and "maior que " in superior.lower()
+                ):
+                    inferior = inferior.split("enor que ")[1].strip()
+                    superior = superior.split("enor que ")[1].strip()
+                if "< " in inferior.lower() and "< " in superior.lower():
+                    inferior = inferior.split("< ")[1].strip()
+                    superior = superior.split("< ")[1].strip()
+                if "> " in inferior.lower() and "> " in superior.lower():
+                    inferior = inferior.split("> ")[1].strip()
+                    superior = superior.split("> ")[1].strip()
+        elif "menor que " in cell.lower():
+            inferior_e_unidade = cell.split("enor que ")[1]
+            inferior, unidade = inferior_e_unidade.split(" ")
+        elif "maior que " in cell.lower():
+            superior_e_unidade = cell.split("aior que ")[1]
             superior, unidade = superior_e_unidade.split(" ")
-            superior = superior.strip()
-        elif "/" in superior_e_unidade:
-            superior, unidade = superior_e_unidade.split("/")
-            unidade = "/" + unidade
-            superior = superior.strip()
-    elif "Ver resultado tradicional" in cell:
-        inferior, superior, unidade = None, None, "Ver resultado tradicional"
-    elif "jejum" in cell:
-        tupla_jejum = cell.split("\n")
-        if len(tupla_jejum) == 2:
-            com_jejum, sem_jejum = tupla_jejum
-            if "menor que " in sem_jejum.lower() or "< " in sem_jejum:
-                if "< " in sem_jejum:
-                    inferior_e_unidade = sem_jejum.split("< ")[1]
-                    inferior, unidade = inferior_e_unidade.split(" ")
-                else:
-                    inferior_e_unidade = sem_jejum.split("enor que ")[1]
-                    inferior, unidade = inferior_e_unidade.split(" ")
-            elif "menor que " in com_jejum.lower() or "< " in com_jejum:
-                if "< " in sem_jejum:
-                    inferior_e_unidade = sem_jejum.split("< ")[1]
-                    inferior, unidade = inferior_e_unidade.split(" ")
-                else:
-                    superior_e_unidade = com_jejum.split("enor que ")[1]
-                    superior, unidade = superior_e_unidade.split(" ")
-            elif "maior que " in sem_jejum.lower() or "> " in sem_jejum:
-                if "> " in sem_jejum:
-                    inferior_e_unidade = sem_jejum.split("> ")[1]
-                    inferior, unidade = inferior_e_unidade.split(" ")
-                else:
-                    inferior_e_unidade = sem_jejum.split("aior que ")[1]
-                    inferior, unidade = inferior_e_unidade.split(" ")
-            elif "maior que " in com_jejum.lower() or "> " in com_jejum:
-                if "> " in sem_jejum:
-                    inferior_e_unidade = sem_jejum.split("> ")[1]
-                    inferior, unidade = inferior_e_unidade.split(" ")
-                else:
-                    superior_e_unidade = com_jejum.split("aior que ")[1]
-                    superior, unidade = superior_e_unidade.split(" ")
+        elif "< " in cell:
+            inferior_e_unidade = cell.split("< ")[1]
+            inferior, unidade = inferior_e_unidade.split(" ")
+        elif "> " in cell:
+            superior_e_unidade = cell.split("> ")[1]
+            superior, unidade = superior_e_unidade.split(" ")
+        elif "até" in cell.lower():
+            superior_e_unidade = cell.split("té ")[1]
+            superior, unidade = superior_e_unidade.split(" ")
         else:
-            inferior, unidade, superior, _ = tupla_jejum
-            if "menor que " in inferior.lower() and "menor que " in superior.lower():
-                inferior = inferior.split("enor que ")[1].strip()
-                superior = superior.split("enor que ")[1].strip()
-            if "maior que " in inferior.lower() and "maior que " in superior.lower():
-                inferior = inferior.split("enor que ")[1].strip()
-                superior = superior.split("enor que ")[1].strip()
-            if "< " in inferior.lower() and "< " in superior.lower():
-                inferior = inferior.split("< ")[1].strip()
-                superior = superior.split("< ")[1].strip()
-            if "> " in inferior.lower() and "> " in superior.lower():
-                inferior = inferior.split("> ")[1].strip()
-                superior = superior.split("> ")[1].strip()
-    elif "menor que " in cell.lower():
-        inferior_e_unidade = cell.split("enor que ")[1]
-        inferior, unidade = inferior_e_unidade.split(" ")
-    elif "maior que " in cell.lower():
-        superior_e_unidade = cell.split("aior que ")[1]
-        superior, unidade = superior_e_unidade.split(" ")
-    elif "< " in cell:
-        inferior_e_unidade = cell.split("< ")[1]
-        inferior, unidade = inferior_e_unidade.split(" ")
-    elif "> " in cell:
-        superior_e_unidade = cell.split("> ")[1]
-        superior, unidade = superior_e_unidade.split(" ")
-    elif "até" in cell.lower():
-        superior_e_unidade = cell.split("té ")[1]
-        superior, unidade = superior_e_unidade.split(" ")
-    else:
-        inferior, superior, unidade = None, None, unidade
-
+            inferior, superior, unidade = None, None, unidade
+    except ValueError:
+        inferior, superior, unidade = None, None, None
     return inferior, superior, unidade
 
 
@@ -205,7 +233,9 @@ def parseia_referencia(df: DataFrame, referencia_cols: list[str]) -> DataFrame:
         df[referencia_cols[0]].map(mapeia_valores_referencia).tolist(), index=df.index
     )
     for col in ["Limite inferior", "Limite superior"]:
-        df[col] = to_numeric(df[col].str.replace(".", "").str.replace(",", "."))
+        df[col] = to_numeric(
+            df[col].str.replace(".", "").str.replace(",", "."), errors="coerce"
+        )
     return df
 
 
@@ -267,8 +297,14 @@ def get_initial_data(content: bytes) -> DataFrame:
             tabs = page.find_tables()  # find tables in the page
 
             for tab in tabs:
+
                 df = concat(
-                    [df, eliminate_junk_and_rename_cols(tab)]
+                    [
+                        df,
+                        eliminate_junk_and_rename_cols(
+                            tab, df.columns if not df.empty else None
+                        ),
+                    ]
                 )  # append to the final DataFrame
     return df
 
