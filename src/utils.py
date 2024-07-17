@@ -1,5 +1,4 @@
-import re
-from pandas import DataFrame, Series, concat, to_numeric, isna
+from pandas import DataFrame, Series, concat, to_datetime, to_numeric, isna
 from pymupdf import open, Page
 from pymupdf.table import TableFinder
 
@@ -18,24 +17,59 @@ def trata_colunas_iniciais(df: DataFrame, num_col: int) -> DataFrame:
     DataFrame: The cleaned and prepared DataFrame with the specified modifications.
     """
     df = df.iloc[:, :-num_col].join(df.iloc[:, -1:])  # remove as colunas inúteis
-    columns = df.iloc[0]  # pega a primeira linha como cabeçalho
+    df.columns = df.columns.str.replace("\n", " ")
+    originais = ["ANALITOS", "RESULTADOS", "VALORES DE REFERÊNCIA"]
+    if not df.columns.isin(originais).any():
+        columns = ["ANALITOS", "RESULTADOS"]
+        for i in range(2, len(df.columns) - 1):
+            columns.append(f"Col{i}")
+        columns.append("VALORES DE REFERÊNCIA")
+        old_cols = df.columns.str.replace(" ", "\n")
+        old_cols = old_cols.str.replace("Col\d", "", regex=True)
+        df.columns = columns
+        # need to put old_cols on first row
+        df = concat([DataFrame(dict(zip(columns, old_cols)), index=[0]), df], axis=0)
+
+    columns = list(df.iloc[0])  # pega a primeira linha como cabeçalho
     df = df[1:]  # remove a primeira linha
-    # seta a coluna RESULTADOS, COL2, COL3 como Resultados - columns 1, 2 e 3
-    dict_cols = {}
-    for i, c in enumerate(columns):
-        if c is not None and "\n" in c:
-            ficha, data = c.split("\n")
-            dict_cols[i] = {"ficha": ficha, "data": data}
-    df_cols = list(df.columns)
-    for key, value in dict_cols.items():
-        df_cols[key] = f"RES - ficha: {value['ficha']} - {value['data']}"
-    df.columns = df_cols
+    to_delete = []
+    start = False
+    if df.empty:
+        return DataFrame()
+    for index, _ in enumerate(df.columns):
+        if not isna(columns[index]) and "\n" in columns[index]:
+            ficha, data = columns[index].split("\n")
+            if not start:
+                df["Ficha"] = ficha
+                df["Data"] = to_datetime(data, format="%d/%m/%Y")
+                start = True
+            else:
+                df = concat(
+                    [
+                        df,
+                        DataFrame(
+                            {
+                                "Ficha": ficha,
+                                "Data": to_datetime(data, format="%d/%m/%Y"),
+                                "ANALITOS": df["ANALITOS"],
+                                "RESULTADOS": df[df.columns[index]],
+                                "VALORES DE REFERÊNCIA": df["VALORES DE REFERÊNCIA"],
+                            }
+                        ),
+                    ],
+                    axis=0,
+                )
+            if not df.columns[index] == "RESULTADOS":
+                to_delete.append(df.columns[index])
+    df.drop(columns=to_delete, inplace=True)
+    df.dropna(inplace=True, subset=["ANALITOS", "RESULTADOS", "VALORES DE REFERÊNCIA"])
+    df = df.sort_values(["Data", "Ficha"], ascending=[True, True]).reset_index(
+        drop=True
+    )
     return df
 
 
-def eliminate_junk_and_rename_cols(
-    tab: TableFinder, columns: list[str] | None = None
-) -> DataFrame:
+def eliminate_junk_and_rename_cols(tab: TableFinder) -> DataFrame:
     """
     This function eliminates unnecessary columns and renames specific
     columns in a DataFrame obtained from a table in a PDF document.
@@ -64,12 +98,7 @@ def eliminate_junk_and_rename_cols(
         df = trata_colunas_iniciais(df, num_col)
 
     else:
-        data: list[str] = [c for c in df.columns]
-        stupid_index = r"\d-"
-        data = [re.sub(stupid_index, "", c) for c in data]
-        if columns is not None:
-            df = DataFrame([dict(zip(columns, data))])
-    df.columns = [c.replace("\n", " ") for c in df.columns]
+        return DataFrame()
     return df
 
 
@@ -263,7 +292,7 @@ def trata_e_extrai_limites(df: DataFrame) -> DataFrame:
     from the reference values column.
     5. Returns the processed DataFrame with the additional columns.
     """
-    data_cols = [column for column in df.columns if "ficha" in column]
+    data_cols = ["RESULTADOS"]
     tratamento = df[data_cols].apply(parse_number_cols, axis=1)
     df[tratamento.columns] = tratamento
     referencia_cols = [c for c in df.columns if "valores de referência" in c.lower()]
@@ -301,9 +330,7 @@ def get_initial_data(content: bytes) -> DataFrame:
                 df = concat(
                     [
                         df,
-                        eliminate_junk_and_rename_cols(
-                            tab, df.columns if not df.empty else None
-                        ),
+                        eliminate_junk_and_rename_cols(tab),
                     ]
                 )  # append to the final DataFrame
     return df
