@@ -7,13 +7,11 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-fastapi = "^0.111.0"
 pandas = "^2.2.2"
-pdfquery = "^0.4.3"
-uvicorn = "^0.29.0"
 lxml = "^5.2.1"
 pymupdf = "^1.24.4"
-xlsxwriter = "^3.2.0"
+pyarrow = "^17.0.0"
+firebase-functions = "^0.4.2"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -24,6 +22,7 @@ black = "^24.4.2"
 isort = "^5.13.2"
 ipykernel = "^6.29.4"
 memory-profiler = "^0.61.0"
+poetry-plugin-export = "^1.8.0"
 [tool.flake8]
 max-line-length = 88
 extend-ignore = ["E203", "W503"]

@@ -135,3 +135,4 @@ cython_debug/
 *.xls
 *.xlsx
 script*.py
+!requirements*.txt
