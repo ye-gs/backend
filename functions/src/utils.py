@@ -25,7 +25,7 @@ def trata_colunas_iniciais(df: DataFrame, num_col: int) -> DataFrame:
             columns.append(f"Col{i}")
         columns.append("VALORES DE REFERÊNCIA")
         old_cols = df.columns.str.replace(" ", "\n")
-        old_cols = old_cols.str.replace("Col\d", "", regex=True)
+        old_cols = old_cols.str.replace("Col\\d", "", regex=True)
         df.columns = columns
         # need to put old_cols on first row
         df = concat([DataFrame(dict(zip(columns, old_cols)), index=[0]), df], axis=0)

@@ -69,21 +69,20 @@ def send_exam(req: https_fn.Request) -> https_fn.Response:
             response=json.dumps({"message": "Method Not Allowed"}),
             headers={"Content-Type": "application/json"},
         )
-    content_length = req.content_length
-    if content_length is None:
+    if req.content_length is None:
         return https_fn.Response(
             status=411,
             response=json.dumps({"message": "Length Required"}),
             headers={"Content-Type": "application/json"},
         )
-    if content_length > 10_000_000:
+    if req.content_length > 10_000_000:
         return https_fn.Response(
             status=413,
             response=json.dumps({"message": "Payload Too Large"}),
             headers={"Content-Type": "application/json"},
         )
     data = req.get_data()
-    logger.info(f"User sent a file with {content_length} bytes")
+    logger.info(f"User sent a file with {req.content_length} bytes")
     df = get_df_from_pdf_exam(data)
     df = df.reset_index(drop=True)
     buf = BytesIO()
