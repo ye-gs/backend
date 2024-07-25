@@ -1,6 +1,5 @@
 from datetime import datetime
 from functools import wraps
-from io import BytesIO
 import json
 from firebase_functions import https_fn
 from firebase_admin import initialize_app
