@@ -86,9 +86,6 @@ def dict2json(d: dict) -> dict:
     Returns:
         dict: serializable dict
     """
-    ##
-    #        raise TypeError(f'Object of type {o.__class__.__name__} '
-    # >  TypeError: Object of type Timestamp is not JSON serializabl
     if isinstance(d, list):
         return [dict2json(i) for i in d]
     if isinstance(d, dict):
