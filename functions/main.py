@@ -1,3 +1,4 @@
+from datetime import datetime
 from functools import wraps
 from io import BytesIO
 import json
@@ -77,6 +78,32 @@ def validate_token(id_token: str) -> https_fn.HttpsError | str:
         )
 
 
+def dict2json(d: dict) -> dict:
+    """Converts all values in a dict to json serializable values
+
+    Args:
+        d (dict): dict to be converted
+
+    Returns:
+        dict: serializable dict
+    """
+    ##
+    #        raise TypeError(f'Object of type {o.__class__.__name__} '
+    # >  TypeError: Object of type Timestamp is not JSON serializabl
+    if isinstance(d, list):
+        return [dict2json(i) for i in d]
+    if isinstance(d, dict):
+        for k, v in d.items():
+            if isinstance(v, datetime):
+                d[k] = v.isoformat()
+
+            elif isinstance(v, dict):
+                d[k] = dict2json(v)
+            elif isinstance(v, list):
+                d[k] = [dict2json(i) for i in v]
+    return d
+
+
 @https_fn.on_request(
     memory=512,
     timeout_sec=60,
@@ -123,6 +150,11 @@ def send_exam(req: https_fn.Request, current_user: UserRecord) -> https_fn.Respo
     logger.info("File processed successfully")
     return https_fn.Response(
         status=200,
-        response=json.dumps({"message": "File processed successfully"}),
+        response=json.dumps(
+            {
+                "message": "File processed successfully",
+                "data": dict2json(df.to_dict(orient="records")),
+            }
+        ),
         content_type="application/json",
     )

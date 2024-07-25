@@ -6,11 +6,7 @@ from functions.src.utils import get_df_from_pdf_exam
 def read_exam(file: bytes) -> None:
     df = get_df_from_pdf_exam(file)
     df = df.reset_index(drop=True)
-    buf = BytesIO()
-    df.to_feather(buf)
-    print(df.head())
-    print(df.dtypes)
-    print(df.shape)
+    df.to_dict(orient="records")
     return None
 
 
