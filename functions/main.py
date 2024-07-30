@@ -3,7 +3,7 @@ from functools import wraps
 import json
 from firebase_functions import https_fn
 from firebase_admin import initialize_app
-from firebase_admin import auth
+from firebase_admin import auth, firestore
 from firebase_admin.auth import UserRecord
 from firebase_functions import logger
 from src.utils import get_df_from_pdf_exam
@@ -143,13 +143,19 @@ def send_exam(req: https_fn.Request, current_user: UserRecord) -> https_fn.Respo
     )
     df = get_df_from_pdf_exam(data)
     df = df.reset_index(drop=True)
+    document = df.to_dict(orient="list")
+    client = firestore.client()
+    logger.info("Saving file to Firestore")
+    _, doc_ref = client.collection("users/" + current_user.uid + "/exams").add(
+        dict2json(document)
+    )
     logger.info("File processed successfully")
     return https_fn.Response(
         status=200,
         response=json.dumps(
             {
                 "message": "File processed successfully",
-                "data": dict2json(df.to_dict(orient="records")),
+                "id": doc_ref.id,
             }
         ),
         content_type="application/json",
