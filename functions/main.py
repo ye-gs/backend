@@ -1,19 +1,15 @@
-from datetime import datetime
-from functools import wraps
 import json
-from firebase_functions import https_fn
-from firebase_admin import initialize_app
-from firebase_admin import auth, firestore
-from firebase_admin.auth import UserRecord
-from firebase_functions import logger
+from functools import wraps
+from typing import Callable, TypeVar
+import firebase_admin
+from firebase_admin import auth, credentials, firestore
+from firebase_functions import https_fn, logger
+from firebase_functions.options import CorsOptions
 from src.utils import get_df_from_pdf_exam
 
-from firebase_functions.options import CorsOptions
-from typing import Callable, TypeVar
-
-
-initialize_app()
-
+# Initialize Firebase Admin SDK
+cred = credentials.Certificate("./serviceAccountKey.json")
+firebase_admin.initialize_app(cred)
 
 RT = TypeVar("RT")  # return type
 
@@ -21,83 +17,41 @@ RT = TypeVar("RT")  # return type
 def token_required(fn: Callable[..., RT]) -> Callable[..., RT | https_fn.HttpsError]:
     @wraps(fn)
     def wrapper(req: https_fn.Request, *args, **kwargs) -> RT | https_fn.HttpsError:
-        error = validate_auth_header(req)
+        logger.info("Verifying for token on header")
+        auth_header = req.headers.get("Authorization")
+        if not auth_header:
+            return https_fn.Response(
+                status=401,
+                content_type="application/json",
+                response=json.dumps({"error": "Authorization header is missing"}),
+            )
 
-        if error:
-            return error
-        token = req.authorization.token
-        uid_or_error = validate_token(token)
-        if isinstance(uid_or_error, https_fn.Response):
-            return uid_or_error
-        current_user: UserRecord = auth.get_user(uid_or_error)
-        return fn(req, *args, **kwargs, current_user=current_user)
+        try:
+            logger.info("splitting token")
+            token = auth_header.split(" ")[1]
+        except IndexError:
+            return https_fn.Response(
+                status=401,
+                content_type="application/json",
+                response=json.dumps({"error": "Authorization header is malformed"}),
+            )
+
+        try:
+            logger.info("Verifying token")
+            decoded_token = auth.verify_id_token(token)
+            logger.info("Token decoded successfully")
+            current_user = auth.get_user(decoded_token["uid"])
+            logger.info(f"calling function for user: {current_user.email}")
+        except Exception as e:
+            return https_fn.Response(
+                status=401,
+                content_type="application/json",
+                response=json.dumps({"error": "Invalid token", "details": str(e)}),
+            )
+
+        return fn(req, current_user, *args, **kwargs)
 
     return wrapper
-
-
-def validate_auth_header(req: https_fn.Request) -> https_fn.HttpsError | None:
-    """
-    Validates if request has authorization header and token is in it
-    - req: Request object
-    -----------------------
-    Returns: None if valid, otherwise a error response object
-    """
-    if not req.authorization or not req.authorization.token:
-        return https_fn.Response(
-            status=https_fn.FunctionsErrorCode.UNAUTHENTICATED,
-            response=json.dumps({"message": "Authorization header required"}),
-            content_type="application/json",
-        )
-    return None
-
-
-def validate_token(id_token: str) -> https_fn.HttpsError | str:
-    """Validates id_token and returns user uid if valid
-
-    Args:
-        id_token: token do usuário
-
-    Returns:
-        https_fn.HttpsError | str: Erro ou uid
-    """
-    try:
-        decoded_token = auth.verify_id_token(id_token)
-        return decoded_token["uid"]
-    except (ValueError, auth.InvalidIdTokenError):
-        return https_fn.Response(
-            status=https_fn.FunctionsErrorCode.UNAUTHENTICATED,
-            response=json.dumps({"message": "Invalid Token"}),
-            content_type="application/json",
-        )
-    except Exception as e:
-        return https_fn.Response(
-            status=https_fn.FunctionsErrorCode.UNAUTHENTICATED,
-            response=json.dumps({"message": f"Erro inesperado ocorreu {e}"}),
-            content_type="application/json",
-        )
-
-
-def dict2json(d: dict) -> dict:
-    """Converts all values in a dict to json serializable values
-
-    Args:
-        d (dict): dict to be converted
-
-    Returns:
-        dict: serializable dict
-    """
-    if isinstance(d, list):
-        return [dict2json(i) for i in d]
-    if isinstance(d, dict):
-        for k, v in d.items():
-            if isinstance(v, datetime):
-                d[k] = v.isoformat()
-
-            elif isinstance(v, dict):
-                d[k] = dict2json(v)
-            elif isinstance(v, list):
-                d[k] = [dict2json(i) for i in v]
-    return d
 
 
 @https_fn.on_request(
@@ -112,13 +66,17 @@ def dict2json(d: dict) -> dict:
     region="southamerica-east1",
 )
 @token_required
-def send_exam(req: https_fn.Request, current_user: UserRecord) -> https_fn.Response:
+def send_exam(
+    req: https_fn.Request, current_user: auth.UserRecord
+) -> https_fn.Response:
+    logger.info("Verifying content-type")
     if req.content_type != "application/pdf":
         return https_fn.Response(
             status=400,
             content_type="application/json",
             response=json.dumps({"message": "Content-Type must be application/pdf"}),
         )
+    logger.info("Verifying called method and content length")
     if req.method != "POST":
         return https_fn.Response(
             status=405,
@@ -131,32 +89,47 @@ def send_exam(req: https_fn.Request, current_user: UserRecord) -> https_fn.Respo
             response=json.dumps({"message": "Length Required"}),
             content_type="application/json",
         )
+    logger.info("Verifying content length")
     if req.content_length > 5_000_000:
         return https_fn.Response(
             status=413,
             response=json.dumps({"message": "Payload Too Large"}),
             content_type="application/json",
         )
+    logger.info("Reading file")
     data = req.get_data()
     logger.info(
         f"User {current_user.email} sent a file with {req.content_length} bytes"
     )
-    df = get_df_from_pdf_exam(data)
-    df = df.reset_index(drop=True)
-    document = df.to_dict(orient="list")
-    client = firestore.client()
-    logger.info("Saving file to Firestore")
-    _, doc_ref = client.collection("users/" + current_user.uid + "/exams").add(
-        dict2json(document)
-    )
-    logger.info("File processed successfully")
-    return https_fn.Response(
-        status=200,
-        response=json.dumps(
-            {
-                "message": "File processed successfully",
-                "id": doc_ref.id,
-            }
-        ),
-        content_type="application/json",
-    )
+    try:
+        logger.info("Processing file")
+        df = get_df_from_pdf_exam(data)
+        df = df.reset_index(drop=True)
+        document = df.to_dict(orient="list")
+        client = firestore.client()
+        logger.info("Saving file to Firestore")
+        _, doc_ref = client.collection("users/" + current_user.uid + "/exams").add(
+            document
+        )
+        logger.info("File processed successfully")
+        return https_fn.Response(
+            status=200,
+            response=json.dumps(
+                {
+                    "message": "File processed successfully",
+                    "id": doc_ref.id,
+                }
+            ),
+            content_type="application/json",
+        )
+    except Exception as e:
+        logger.error(f"Error processing file: {str(e)}")
+        return https_fn.Response(
+            status=500,
+            response=json.dumps({"message": "Internal Server Error", "detail": str(e)}),
+            content_type="application/json",
+        )
+
+
+# Ensure the function is exported for Firebase Functions
+exports = {"send_exam": send_exam}

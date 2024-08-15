@@ -1,6 +1,7 @@
 from pandas import DataFrame, Series, concat, to_datetime, to_numeric, isna
 from pymupdf import open, Page
 from pymupdf.table import TableFinder
+from firebase_functions import logger
 
 
 def trata_colunas_iniciais(df: DataFrame, num_col: int) -> DataFrame:
@@ -16,6 +17,7 @@ def trata_colunas_iniciais(df: DataFrame, num_col: int) -> DataFrame:
     Returns:
     DataFrame: The cleaned and prepared DataFrame with the specified modifications.
     """
+    logger.info("Removendo colunas inúteis")
     df = df.iloc[:, :-num_col].join(df.iloc[:, -1:])  # remove as colunas inúteis
     df.columns = df.columns.str.replace("\n", " ")
     originais = ["ANALITOS", "RESULTADOS", "VALORES DE REFERÊNCIA"]
@@ -36,6 +38,7 @@ def trata_colunas_iniciais(df: DataFrame, num_col: int) -> DataFrame:
     start = False
     if df.empty:
         return DataFrame()
+    logger.info("Separando ficha e data")
     for index, _ in enumerate(df.columns):
         if not isna(columns[index]) and "\n" in columns[index]:
             ficha, data = columns[index].split("\n")
@@ -44,6 +47,7 @@ def trata_colunas_iniciais(df: DataFrame, num_col: int) -> DataFrame:
                 df["Data"] = to_datetime(data, format="%d/%m/%Y")
                 start = True
             else:
+                logger.info("Concatenando df")
                 df = concat(
                     [
                         df,
@@ -61,8 +65,11 @@ def trata_colunas_iniciais(df: DataFrame, num_col: int) -> DataFrame:
                 )
             if not df.columns[index] == "RESULTADOS":
                 to_delete.append(df.columns[index])
+    logger.info(f"Dropando colunas {to_delete}")
     df.drop(columns=to_delete, inplace=True)
+    logger.info("Dropando linhas com valores nulos")
     df.dropna(inplace=True, subset=["ANALITOS", "RESULTADOS", "VALORES DE REFERÊNCIA"])
+    logger.info("Ordenando pela data e ficha")
     df = df.sort_values(["Data", "Ficha"], ascending=[True, True]).reset_index(
         drop=True
     )
@@ -91,10 +98,13 @@ def eliminate_junk_and_rename_cols(tab: TableFinder) -> DataFrame:
     """
     df = tab.to_pandas()  # convert to pandas DataFrame
     if not df.empty:
+        logger.info("Removendo colunas vazias")
         df = df.dropna(axis=1, how="all")  # remove colunas vazias
+        logger.info("Removendo linhas vazias")
         num_col = df.iloc[0].value_counts().iloc[0]  # verifica se ha colunas inúteis
         if num_col != 1:
             num_col += 1
+        logger.info("Tratando colunas iniciais")
         df = trata_colunas_iniciais(df, num_col)
 
     else:
@@ -292,10 +302,18 @@ def trata_e_extrai_limites(df: DataFrame) -> DataFrame:
     from the reference values column.
     5. Returns the processed DataFrame with the additional columns.
     """
+    logger.info("Tratando dataframe e extraindo limites")
     data_cols = ["RESULTADOS"]
+    logger.info("Tratando colunas numéricas")
+    if data_cols[0] not in df.columns:
+        raise ValueError(
+            "A IA não detectou nenhuma coluna com valores de resultados"
+            "Favor inserir o nome da coluna"
+        )
     tratamento = df[data_cols].apply(parse_number_cols, axis=1)
     df[tratamento.columns] = tratamento
     referencia_cols = [c for c in df.columns if "valores de referência" in c.lower()]
+    logger.info("Parseando valores de referência")
     return parseia_referencia(df, referencia_cols)
 
 
@@ -320,13 +338,16 @@ def get_initial_data(content: bytes) -> DataFrame:
     6. Returns the final DataFrame containing the extracted data.
     """
     df = DataFrame()
+    logger.info("Opening document")
     doc = open(stream=content)  # open a document
-    for page in doc:  # iterate the document pages
+    for index, page in enumerate(doc):  # iterate the document pages
+        logger.info(f"Processing page {index + 1}")
         if isinstance(page, Page):
+            logger.info("Finding tables")
             tabs = page.find_tables()  # find tables in the page
 
             for tab in tabs:
-
+                logger.info("Concatenating, leaning and renaming columns")
                 df = concat(
                     [
                         df,
@@ -359,6 +380,8 @@ def get_df_from_pdf_exam(content: bytes) -> DataFrame:
     7. Returns the final DataFrame containing the extracted data with
     additional columns for lower limit, upper limit, and unit of measurement.
     """
+    logger.info("Getting initial data")
     df = get_initial_data(content)
+    logger.info("Treating dataframe")
     trata_e_extrai_limites(df)
     return df
