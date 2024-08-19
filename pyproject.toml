@@ -8,32 +8,17 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.10"
 pandas = "^2.2.2"
-lxml = "^5.2.1"
 pymupdf = "^1.24.4"
-pyarrow = "^17.0.0"
-firebase-functions = "^0.4.2"
+firebase-functions = "0.4.0"
 
 
 [tool.poetry.group.dev.dependencies]
-flake8 = "^7.0.0"
 mypy = "^1.10.0"
-flake8-pyproject = "^1.2.3"
-black = "^24.4.2"
-isort = "^5.13.2"
 ipykernel = "^6.29.4"
 memory-profiler = "^0.61.0"
 poetry-plugin-export = "^1.8.0"
-[tool.flake8]
-max-line-length = 88
-extend-ignore = ["E203", "W503"]
-
-[tool.black]
-line-length = 88
-
-[tool.isort]
-line-length = 88
-profile = "black"
-multi-line = 3  
+ruff = "^0.6.1"
+mypy-extensions = "^1.0.0"
 
 [tool.mypy]
 python_version = "3.10"
@@ -54,6 +39,28 @@ pretty = true
 no_implicit_optional = true
 no_implicit_reexport = true
 files= ["."]
+
+[tool.ruff]
+exclude = ["/*venv", "*/__pycache__", "*/.mypy_cache", "*/.pytest_cache", "*/.git", "*/.vscode"]
+line-length = 88
+indent-width = 4
+target-version = "py312"
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "SIM", "UP"]
+fixable = ["ALL"]
+unfixable = []
+dummy-variable-rgx = "^_"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
 
 
 [build-system]

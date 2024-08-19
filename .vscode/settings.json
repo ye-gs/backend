@@ -1,10 +1,13 @@
 {
     "[python]": {
-        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.defaultFormatter": "charliermarsh.ruff",
         "diffEditor.ignoreTrimWhitespace": false,
         "editor.formatOnType": true,
         "editor.formatOnSave": true,
         "editor.formatOnPaste": true,
-        "editor.wordBasedSuggestions": "off"
+        "editor.wordBasedSuggestions": "off",
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "always"
+        }
     }
 }

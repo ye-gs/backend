@@ -1,6 +1,8 @@
 import json
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, TypeVar
+from typing import TypeVar
+
 import firebase_admin
 from firebase_admin import auth, credentials, firestore
 from firebase_functions import https_fn, logger
@@ -16,11 +18,11 @@ RT = TypeVar("RT")  # return type
 
 def token_required(fn: Callable[..., RT]) -> Callable[..., RT | https_fn.HttpsError]:
     @wraps(fn)
-    def wrapper(req: https_fn.Request, *args, **kwargs) -> RT | https_fn.HttpsError:
+    def wrapper(req: https_fn.Request, *args, **kwargs) -> RT | https_fn.HttpsError:  # type: ignore
         logger.info("Verifying for token on header")
         auth_header = req.headers.get("Authorization")
         if not auth_header:
-            return https_fn.Response(
+            return https_fn.Response(  # type: ignore
                 status=401,
                 content_type="application/json",
                 response=json.dumps({"error": "Authorization header is missing"}),
@@ -30,7 +32,7 @@ def token_required(fn: Callable[..., RT]) -> Callable[..., RT | https_fn.HttpsEr
             logger.info("splitting token")
             token = auth_header.split(" ")[1]
         except IndexError:
-            return https_fn.Response(
+            return https_fn.Response(  # type: ignore
                 status=401,
                 content_type="application/json",
                 response=json.dumps({"error": "Authorization header is malformed"}),
@@ -43,7 +45,7 @@ def token_required(fn: Callable[..., RT]) -> Callable[..., RT | https_fn.HttpsEr
             current_user = auth.get_user(decoded_token["uid"])
             logger.info(f"calling function for user: {current_user.email}")
         except Exception as e:
-            return https_fn.Response(
+            return https_fn.Response(  # type: ignore
                 status=401,
                 content_type="application/json",
                 response=json.dumps({"error": "Invalid token", "details": str(e)}),
@@ -54,7 +56,7 @@ def token_required(fn: Callable[..., RT]) -> Callable[..., RT | https_fn.HttpsEr
     return wrapper
 
 
-@https_fn.on_request(
+@https_fn.on_request(  # type: ignore
     memory=512,
     timeout_sec=60,
     max_instances=1,
@@ -71,27 +73,27 @@ def send_exam(
 ) -> https_fn.Response:
     logger.info("Verifying content-type")
     if req.content_type != "application/pdf":
-        return https_fn.Response(
+        return https_fn.Response(  # type: ignore
             status=400,
             content_type="application/json",
             response=json.dumps({"message": "Content-Type must be application/pdf"}),
         )
     logger.info("Verifying called method and content length")
     if req.method != "POST":
-        return https_fn.Response(
+        return https_fn.Response(  # type: ignore
             status=405,
             response=json.dumps({"message": "Method Not Allowed"}),
             content_type="application/json",
         )
     if req.content_length is None:
-        return https_fn.Response(
+        return https_fn.Response(  # type: ignore
             status=411,
             response=json.dumps({"message": "Length Required"}),
             content_type="application/json",
         )
     logger.info("Verifying content length")
     if req.content_length > 5_000_000:
-        return https_fn.Response(
+        return https_fn.Response(  # type: ignore
             status=413,
             response=json.dumps({"message": "Payload Too Large"}),
             content_type="application/json",
@@ -112,7 +114,7 @@ def send_exam(
             document
         )
         logger.info("File processed successfully")
-        return https_fn.Response(
+        return https_fn.Response(  # type: ignore
             status=200,
             response=json.dumps(
                 {
@@ -124,7 +126,7 @@ def send_exam(
         )
     except Exception as e:
         logger.error(f"Error processing file: {str(e)}")
-        return https_fn.Response(
+        return https_fn.Response(  # type: ignore
             status=500,
             response=json.dumps({"message": "Internal Server Error", "detail": str(e)}),
             content_type="application/json",

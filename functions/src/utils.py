@@ -1,7 +1,7 @@
-from pandas import DataFrame, Series, concat, to_datetime, to_numeric, isna
-from pymupdf import open, Page
-from pymupdf.table import TableFinder
 from firebase_functions import logger
+from pandas import DataFrame, Series, concat, isna, to_datetime, to_numeric
+from pymupdf import Page, open
+from pymupdf.table import TableFinder
 
 
 def trata_colunas_iniciais(df: DataFrame, num_col: int) -> DataFrame:
@@ -30,7 +30,10 @@ def trata_colunas_iniciais(df: DataFrame, num_col: int) -> DataFrame:
         old_cols = old_cols.str.replace("Col\\d", "", regex=True)
         df.columns = columns
         # need to put old_cols on first row
-        df = concat([DataFrame(dict(zip(columns, old_cols)), index=[0]), df], axis=0)
+        df = concat(
+            [DataFrame(dict(zip(columns, old_cols, strict=False)), index=[0]), df],
+            axis=0,
+        )
 
     columns = list(df.iloc[0])  # pega a primeira linha como cabeçalho
     df = df[1:]  # remove a primeira linha
@@ -63,7 +66,7 @@ def trata_colunas_iniciais(df: DataFrame, num_col: int) -> DataFrame:
                     ],
                     axis=0,
                 )
-            if not df.columns[index] == "RESULTADOS":
+            if df.columns[index] != "RESULTADOS":
                 to_delete.append(df.columns[index])
     logger.info(f"Dropando colunas {to_delete}")
     df.drop(columns=to_delete, inplace=True)
