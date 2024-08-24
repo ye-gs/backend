@@ -111,7 +111,8 @@ def send_exam(
         client = firestore.client()
         logger.info("Saving file to Firestore")
         _, doc_ref = client.collection("users/" + current_user.uid + "/exams").add(
-            document
+            document,
+            document_id=firestore.SERVER_TIMESTAMP,
         )
         logger.info("File processed successfully")
         return https_fn.Response(  # type: ignore
