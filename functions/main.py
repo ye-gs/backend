@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import json
 from collections.abc import Callable
 from functools import wraps
@@ -112,7 +113,7 @@ def send_exam(
         logger.info("Saving file to Firestore")
         _, doc_ref = client.collection("users/" + current_user.uid + "/exams").add(
             document,
-            document_id=firestore.SERVER_TIMESTAMP,
+            document_id=datetime.now(tz=timezone.utc).isoformat(),
         )
         logger.info("File processed successfully")
         return https_fn.Response(  # type: ignore
